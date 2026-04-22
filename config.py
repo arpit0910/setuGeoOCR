@@ -3,10 +3,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Tesseract binary path — update this if Tesseract is installed elsewhere
+# Tesseract binary path — Linux default; update via .env for Windows
 TESSERACT_CMD = os.getenv(
     "TESSERACT_CMD",
-    r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+    "/usr/bin/tesseract"
 )
 
 # Upload settings
@@ -20,3 +20,4 @@ TESSERACT_CONFIG = os.getenv("TESSERACT_CONFIG", "--oem 3 --psm 6")
 # Service settings
 HOST = os.getenv("HOST", "0.0.0.0")
 PORT = int(os.getenv("PORT", 8001))
+API_KEY = os.getenv("API_KEY", "your-secret-api-key-change-this")
