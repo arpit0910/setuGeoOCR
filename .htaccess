@@ -16,16 +16,19 @@ LimitRequestBody 10485760
 <IfModule mod_rewrite.c>
     RewriteEngine On
 
+    # Canonical production host.
+    RewriteCond %{HTTP_HOST} !^ocr\.setugeo\.com$ [NC]
+    RewriteRule ^ https://ocr.setugeo.com%{REQUEST_URI} [R=301,L]
+
     # Block direct access to sensitive project and runtime files.
     RewriteRule (^|/)(\.env|\.env\..*|\.git|\.dockerignore|Dockerfile|docker-compose\.yml|requirements\.txt|ocr_service\.log)$ - [F,L,NC]
     RewriteRule ^(uploads|scratch|__pycache__|\.vscode)(/|$) - [F,L,NC]
     RewriteRule \.(py|pyc|pyo|log|ini|bak|sql|sqlite|db)$ - [F,L,NC]
 
-    # Uncomment these lines if Apache terminates HTTPS directly.
-    # RewriteCond %{HTTPS} !=on
-    # RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L]
+    # Force HTTPS on the production host when Apache terminates TLS directly.
+    RewriteCond %{HTTPS} !=on
+    RewriteRule ^ https://ocr.setugeo.com%{REQUEST_URI} [R=301,L]
 
     # Forward all application traffic to uvicorn/FastAPI.
     RewriteRule ^(.*)$ http://127.0.0.1:8001/$1 [P,L,QSA]
 </IfModule>
-
