@@ -1,0 +1,31 @@
+# Production Apache configuration for SetuGeo OCR.
+# Requires mod_rewrite, mod_proxy, mod_proxy_http, and mod_headers.
+
+Options -Indexes
+DirectoryIndex disabled
+
+<IfModule mod_headers.c>
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set X-Frame-Options "DENY"
+    Header always set Referrer-Policy "no-referrer"
+</IfModule>
+
+# Match the application upload limit.
+LimitRequestBody 10485760
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # Block direct access to sensitive project and runtime files.
+    RewriteRule (^|/)(\.env|\.env\..*|\.git|\.dockerignore|Dockerfile|docker-compose\.yml|requirements\.txt|ocr_service\.log)$ - [F,L,NC]
+    RewriteRule ^(uploads|scratch|__pycache__|\.vscode)(/|$) - [F,L,NC]
+    RewriteRule \.(py|pyc|pyo|log|ini|bak|sql|sqlite|db)$ - [F,L,NC]
+
+    # Uncomment these lines if Apache terminates HTTPS directly.
+    # RewriteCond %{HTTPS} !=on
+    # RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L]
+
+    # Forward all application traffic to uvicorn/FastAPI.
+    RewriteRule ^(.*)$ http://127.0.0.1:8001/$1 [P,L,QSA]
+</IfModule>
+
