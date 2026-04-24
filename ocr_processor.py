@@ -1,5 +1,6 @@
 import pytesseract
 from PIL import Image
+from typing import Any
 
 import config
 from utils.image_utils import preprocess
@@ -25,12 +26,17 @@ def process_image(img: Image.Image, document_type: str | None = None) -> dict:
     raw_text  = _run_ocr(processed)
 
     detected_type = document_type or _detect_type(raw_text)
+    extracted_fields = _extract(raw_text, detected_type)
+    validation = _validate_extraction(detected_type, extracted_fields, raw_text)
 
     return {
         "document_type":     detected_type,
         "raw_text":          raw_text,
-        "extracted_fields":  _extract(raw_text, detected_type),
+        "extracted_fields":  extracted_fields,
         "confidence":        _confidence_hint(detected_type, raw_text),
+        "validation":        validation,
+        "success":           validation["is_valid"],
+        "message":           validation["message"],
     }
 
 
@@ -90,3 +96,51 @@ def _confidence_hint(doc_type: str, text: str) -> str:
     if doc_type in ("aadhaar_front", "aadhaar_back"):
         return "high" if re.search(r'\d{4}[\s\-]?\d{4}[\s\-]?\d{4}', text) else "low"
     return "low"
+
+
+_REQUIRED_FIELDS = {
+    "pan": ["pan_number", "name", "father_name", "dob"],
+    "aadhaar_front": ["aadhaar_number", "name"],
+    "aadhaar_back": ["aadhaar_number", "address", "pincode"],
+}
+
+
+def _validate_extraction(doc_type: str, fields: dict[str, Any], raw_text: str) -> dict:
+    required_fields = _REQUIRED_FIELDS.get(doc_type, [])
+    missing_fields = [field for field in required_fields if not _has_value(fields.get(field))]
+
+    if doc_type == "aadhaar_front":
+        has_birth_value = _has_value(fields.get("dob")) or _has_value(fields.get("year_of_birth"))
+        if not has_birth_value:
+            missing_fields.append("dob_or_year_of_birth")
+
+    raw_text_length = len(raw_text.strip())
+    is_valid = doc_type != "unknown" and not missing_fields and raw_text_length >= 20
+
+    if is_valid:
+        message = "Values extracted successfully."
+    elif doc_type == "unknown":
+        message = "We could not identify the document type. Please upload a clearer image."
+    else:
+        message = (
+            "We could not extract all required values. "
+            "Please upload a clearer, properly aligned image. The current image may be blurry or incomplete."
+        )
+
+    return {
+        "is_valid": is_valid,
+        "missing_fields": missing_fields,
+        "required_fields": required_fields,
+        "raw_text_length": raw_text_length,
+        "message": message,
+    }
+
+
+def _has_value(value: Any) -> bool:
+    if value is None:
+        return False
+
+    if isinstance(value, str):
+        return bool(value.strip())
+
+    return True
