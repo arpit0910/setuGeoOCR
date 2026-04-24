@@ -37,7 +37,12 @@ app = FastAPI(
 # CORS configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Adjust this in production to specific Laravel domains
+    allow_origins=[
+        "https://setugeo.com",
+        "https://www.setugeo.com",
+        "http://localhost",  # For local development
+        "http://127.0.0.1"
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -29,6 +29,8 @@ LimitRequestBody 10485760
     RewriteCond %{HTTPS} !=on
     RewriteRule ^ https://ocr.setugeo.com%{REQUEST_URI} [R=301,L]
 
-    # Forward all application traffic to uvicorn/FastAPI.
-    RewriteRule ^(.*)$ http://127.0.0.1:8001/$1 [P,L,QSA]
+    # FOR CPANEL / PASSENGER HOSTING:
+    # Comment out the proxy rules below because Passenger will handle the routing directly.
+    # If you are NOT using Passenger and running uvicorn in the background, uncomment these.
+    # RewriteRule ^(.*)$ http://127.0.0.1:8001/$1 [P,L,QSA]
 </IfModule>
