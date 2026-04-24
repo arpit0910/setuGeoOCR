@@ -5,7 +5,7 @@ import time
 from typing import Optional
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile, Depends, Security, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, HTMLResponse
 from fastapi.security.api_key import APIKeyHeader
 from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image
@@ -29,6 +29,7 @@ logger = logging.getLogger("setu-geo-ocr")
 # ── app initialization ────────────────────────────────────────────────────────
 
 app = FastAPI(
+    debug=True,
     title="SetuGeo OCR Service",
     description="Production-ready OCR microservice for Laravel integration.",
     version="1.0.0",
@@ -95,14 +96,14 @@ async def custom_http_exception_handler(request: Request, exc: StarletteHTTPExce
 
 # ── root & health ────────────────────────────────────────────────────────────
 
-@app.get("/", tags=["System"])
+@app.get("/", response_class=HTMLResponse, tags=["System"])
 def root():
-    """Root endpoint."""
-    return {
-        "service": "SetuGeo OCR Service",
-        "status": "online",
-        "message": "Welcome to SetuGeo OCR. Use /docs for API documentation."
-    }
+    """Root endpoint returning the testing UI."""
+    try:
+        with open("index.html", "r", encoding="utf-8") as f:
+            return f.read()
+    except FileNotFoundError:
+        return "<h1>Welcome to SetuGeo OCR.</h1><p>API is running.</p>"
 
 @app.get("/health", tags=["System"])
 def health():
@@ -129,7 +130,7 @@ async def extract(
     image: UploadFile = File(..., description="Image of the document (JPEG, PNG, WEBP, BMP, TIFF)"),
     document_type: Optional[str] = Form(
         None,
-        description="Optional hint: 'pan' | 'aadhaar_front' | 'aadhaar_back'. "
+        description="Optional hint: 'pan' | 'aadhaar_front' | 'aadhaar_back' | 'voter_id' | 'dl' | 'passport'. "
                     "If omitted the service auto-detects.",
     ),
 ):
@@ -170,7 +171,7 @@ def detected_type_info(result):
 
 # ── validation ────────────────────────────────────────────────────────────────
 
-_VALID_DOC_TYPES = {"pan", "aadhaar_front", "aadhaar_back", None}
+_VALID_DOC_TYPES = {"pan", "aadhaar_front", "aadhaar_back", "voter_id", "dl", "passport", None}
 
 def _validate_file(file: UploadFile, document_type: Optional[str]):
     if file.content_type not in config.ALLOWED_EXTENSIONS:
@@ -186,7 +187,7 @@ def _validate_file(file: UploadFile, document_type: Optional[str]):
         raise HTTPException(
             status_code=400,
             detail=f"Invalid document_type '{document_type}'. "
-                   f"Allowed values: pan, aadhaar_front, aadhaar_back",
+                   f"Allowed values: pan, aadhaar_front, aadhaar_back, voter_id, dl, passport",
         )
 
 # ── entry point ───────────────────────────────────────────────────────────────

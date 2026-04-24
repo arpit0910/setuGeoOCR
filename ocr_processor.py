@@ -1,6 +1,6 @@
 import pytesseract
 from PIL import Image
-from typing import Any
+from typing import Any, Dict, Optional
 
 import config
 from utils.image_utils import preprocess
@@ -13,7 +13,7 @@ pytesseract.pytesseract.tesseract_cmd = config.TESSERACT_CMD
 
 # ── public API ───────────────────────────────────────────────────────────────
 
-def process_image(img: Image.Image, document_type: str | None = None) -> dict:
+def process_image(img: Image.Image, document_type: Optional[str] = None) -> dict:
     """
     Main entry point.
     - Preprocesses the image for Tesseract.
@@ -54,9 +54,12 @@ def _run_ocr(img: Image.Image) -> str:
 
 _PAN_SIGNALS      = {"INCOME TAX DEPARTMENT", "PERMANENT ACCOUNT NUMBER", "INCOME TAX DEPT"}
 _AADHAAR_SIGNALS  = {"GOVERNMENT OF INDIA", "UIDAI", "UNIQUE IDENTIFICATION"}
+_VOTER_SIGNALS    = {"ELECTION COMMISSION", "ELECTOR PHOTO IDENTITY CARD", "ELECTOR'S PHOTO IDENTITY CARD"}
+_DL_SIGNALS       = {"DRIVING LICENCE", "DRIVING LICENSE", "MOTOR VEHICLE", "UNION OF INDIA"}
+_PASSPORT_SIGNALS = {"REPUBLIC OF INDIA", "PASSPORT", "REPUBLIQUE DE L'INDE"}
 
 _AADHAAR_FRONT_HINTS = {"MALE", "FEMALE", "TRANSGENDER", "DOB", "DATE OF BIRTH", "YOB", "YEAR OF BIRTH"}
-_AADHAAR_BACK_HINTS  = {"S/O", "D/O", "W/O", "C/O", "VILLAGE", "DISTRICT", "ADDRESS"}
+_AADHAAR_BACK_HINTS  = {"S/O", "D/O", "W/O", "C/O", "VILLAGE", "DISTRICT", "ADDRESS", "PINCODE"}
 
 
 def _detect_type(text: str) -> str:
@@ -65,10 +68,23 @@ def _detect_type(text: str) -> str:
     if any(s in upper for s in _PAN_SIGNALS):
         return "pan"
 
+    if any(s in upper for s in _VOTER_SIGNALS):
+        return "voter_id"
+
+    if any(s in upper for s in _PASSPORT_SIGNALS):
+        return "passport"
+
+    if any(s in upper for s in _DL_SIGNALS) or ("DL" in upper and "DOB" in upper and "ISSUE" in upper):
+        return "dl"
+
     if any(s in upper for s in _AADHAAR_SIGNALS):
         front_score = sum(1 for h in _AADHAAR_FRONT_HINTS if h in upper)
         back_score  = sum(1 for h in _AADHAAR_BACK_HINTS  if h in upper)
         return "aadhaar_front" if front_score >= back_score else "aadhaar_back"
+
+    # Fallback heuristics if signals missed
+    if "ADDRESS:" in upper or "FATHER:" in upper or "W/O" in upper or "S/O" in upper:
+        return "aadhaar_back"  # Common for cropped aadhaar back
 
     return "unknown"
 
@@ -80,6 +96,15 @@ def _extract(text: str, doc_type: str) -> dict:
         return extract_pan(text)
     if doc_type in ("aadhaar_front", "aadhaar_back"):
         return extract_aadhaar(text, doc_type)
+    if doc_type == "voter_id":
+        from extractors.voter_id import extract_voter_id
+        return extract_voter_id(text)
+    if doc_type == "dl":
+        from extractors.dl import extract_dl
+        return extract_dl(text)
+    if doc_type == "passport":
+        from extractors.passport import extract_passport
+        return extract_passport(text)
     return {"raw": text}  # unknown — return raw text so caller can inspect
 
 
@@ -87,25 +112,33 @@ def _extract(text: str, doc_type: str) -> dict:
 
 def _confidence_hint(doc_type: str, text: str) -> str:
     """
-    Simple heuristic: if the key identifier (PAN number / Aadhaar number)
-    was found we mark confidence as 'high', otherwise 'low'.
+    Simple heuristic: if the key identifier was found we mark confidence as 'high', otherwise 'low'.
     """
     import re
     if doc_type == "pan":
         return "high" if re.search(r'[A-Z]{5}[0-9]{4}[A-Z]', text) else "low"
     if doc_type in ("aadhaar_front", "aadhaar_back"):
         return "high" if re.search(r'\d{4}[\s\-]?\d{4}[\s\-]?\d{4}', text) else "low"
+    if doc_type == "voter_id":
+        return "high" if re.search(r'[A-Z]{3}[0-9]{7}', text) else "low"
+    if doc_type == "dl":
+        return "high" if re.search(r'[A-Z]{2}[0-9]{13}', text) or re.search(r'[A-Z]{2}[0-9]{2}[\s-]?[0-9]{11}', text) else "low"
+    if doc_type == "passport":
+        return "high" if re.search(r'[A-Z][0-9]{7}', text) else "low"
     return "low"
 
 
 _REQUIRED_FIELDS = {
     "pan": ["pan_number", "name", "father_name", "dob"],
     "aadhaar_front": ["aadhaar_number", "name"],
-    "aadhaar_back": ["aadhaar_number", "address", "pincode"],
+    "aadhaar_back": ["address"],
+    "voter_id": ["voter_id_number", "name"],
+    "dl": ["dl_number", "name", "dob"],
+    "passport": ["passport_number", "surname", "given_names"],
 }
 
 
-def _validate_extraction(doc_type: str, fields: dict[str, Any], raw_text: str) -> dict:
+def _validate_extraction(doc_type: str, fields: Dict[str, Any], raw_text: str) -> dict:
     required_fields = _REQUIRED_FIELDS.get(doc_type, [])
     missing_fields = [field for field in required_fields if not _has_value(fields.get(field))]
 

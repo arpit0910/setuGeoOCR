@@ -1,5 +1,5 @@
 import re
-from typing import Optional
+from typing import Optional, List
 
 
 def extract_aadhaar(text: str, side: str) -> dict:
@@ -78,27 +78,37 @@ def _name_front(lines: list) -> Optional[str]:
     _SKIP = {
         "GOVERNMENT", "INDIA", "UIDAI", "UNIQUE", "IDENTIFICATION",
         "AUTHORITY", "DOB", "MALE", "FEMALE", "TRANSGENDER", "YEAR",
-        "YOB", "ENROLMENT",
+        "YOB", "ENROLMENT", "HUSBAND", "FATHER", "WIFE",
     }
 
     for line in lines:
-        words = line.split()
+        # Strip leading non-alphabetic characters (OCR noise like dots)
+        clean_line = re.sub(r'^[^A-Za-z]+', '', line).strip()
+        if not clean_line:
+            continue
+            
+        words = clean_line.split()
         # Name lines: 2-4 words, only letters/dots/spaces, not a skip word
         if not (2 <= len(words) <= 5):
             continue
         if any(w.upper() in _SKIP for w in words):
             continue
-        if re.match(r'^[A-Za-z][A-Za-z\s\.]{3,}$', line):
-            return line.title()
+            
+        # Real names usually have uppercase letters; OCR noise is often entirely lowercase
+        if not re.search(r'[A-Z]', line):
+            continue
+            
+        if re.match(r'^[A-Za-z][A-Za-z\s\.]{3,}$', clean_line):
+            return clean_line.title()
     return None
 
 
-def _address(lines: list) -> Optional[str]:
+def _address(lines: List[str]) -> Optional[str]:
     _TRIGGERS = {
         "S/O", "D/O", "W/O", "C/O", "H.NO", "H.NO.", "HOUSE NO",
         "FLAT", "PLOT", "VILLAGE", "DIST", "DISTRICT", "STATE",
         "PINCODE", "PIN CODE", "POST", "STREET", "ROAD", "NAGAR",
-        "COLONY", "MOHALLA", "WARD", "BLOCK", "SECTOR",
+        "COLONY", "MOHALLA", "WARD", "BLOCK", "SECTOR", "ADDRESS", "ADD:",
     }
     _NOISE = {"GOVERNMENT", "INDIA", "UIDAI", "UNIQUE", "IDENTIFICATION", "AUTHORITY"}
 
@@ -117,6 +127,18 @@ def _address(lines: list) -> Optional[str]:
             addr_lines.append(line)
             if re.search(r'\b\d{6}\b', line):  # pincode signals end of address
                 break
+                
+    # Fallback: if no trigger found, collect all reasonable lines
+    if not addr_lines:
+        for line in lines:
+            upper = line.upper()
+            if any(n in upper for n in _NOISE):
+                continue
+            if re.fullmatch(r'\d{12}', line.replace(" ", "")):
+                continue
+            # basic filtering for address lines (usually longer than 3 chars)
+            if len(line) > 3:
+                addr_lines.append(line)
 
     return ", ".join(addr_lines) if addr_lines else None
 

@@ -18,6 +18,6 @@ TESSERACT_LANG = os.getenv("TESSERACT_LANG", "eng")
 TESSERACT_CONFIG = os.getenv("TESSERACT_CONFIG", "--oem 3 --psm 6")
 
 # Service settings
-HOST = os.getenv("HOST", "0.0.0.0")
+HOST = os.getenv("HOST", "127.0.0.1")
 PORT = int(os.getenv("PORT", 8001))
 API_KEY = os.getenv("API_KEY", "your-secret-api-key-change-this")

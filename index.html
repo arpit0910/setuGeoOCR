@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SetuGeo OCR Service</title>
+    <style>
+        :root {
+            --primary: #4f46e5;
+            --primary-hover: #4338ca;
+            --bg: #0f172a;
+            --surface: #1e293b;
+            --surface-hover: #334155;
+            --text: #f8fafc;
+            --text-muted: #94a3b8;
+            --border: #334155;
+            --success: #10b981;
+            --error: #ef4444;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 2rem;
+            background-image: 
+                radial-gradient(at 0% 0%, rgba(79, 70, 229, 0.15) 0px, transparent 50%),
+                radial-gradient(at 100% 100%, rgba(16, 185, 129, 0.15) 0px, transparent 50%);
+        }
+
+        .container {
+            max-width: 800px;
+            width: 100%;
+            background: var(--surface);
+            border-radius: 24px;
+            padding: 3rem;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            border: 1px solid var(--border);
+            backdrop-filter: blur(10px);
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 3rem;
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            font-weight: 800;
+            margin-bottom: 1rem;
+            background: linear-gradient(to right, #818cf8, #c084fc);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: -0.025em;
+        }
+
+        p {
+            color: var(--text-muted);
+            font-size: 1.1rem;
+            line-height: 1.6;
+        }
+
+        .upload-area {
+            border: 2px dashed var(--border);
+            border-radius: 16px;
+            padding: 3rem 2rem;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: rgba(15, 23, 42, 0.5);
+            margin-bottom: 2rem;
+        }
+
+        .upload-area:hover, .upload-area.dragover {
+            border-color: var(--primary);
+            background: rgba(79, 70, 229, 0.05);
+        }
+
+        .upload-icon {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            color: var(--primary);
+        }
+
+        .file-input {
+            display: none;
+        }
+
+        .select-wrapper {
+            margin-bottom: 2rem;
+        }
+
+        select {
+            width: 100%;
+            padding: 1rem;
+            border-radius: 12px;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            color: var(--text);
+            font-size: 1rem;
+            outline: none;
+            transition: border-color 0.3s;
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2394a3b8'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 1rem center;
+            background-size: 1.5em;
+        }
+
+        select:focus {
+            border-color: var(--primary);
+        }
+
+        .api-key-input {
+            width: 100%;
+            padding: 1rem;
+            border-radius: 12px;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            color: var(--text);
+            font-size: 1rem;
+            outline: none;
+            transition: border-color 0.3s;
+            margin-bottom: 2rem;
+        }
+
+        .api-key-input:focus {
+            border-color: var(--primary);
+        }
+
+        .btn {
+            width: 100%;
+            padding: 1rem;
+            border-radius: 12px;
+            background: var(--primary);
+            color: white;
+            border: none;
+            font-size: 1.1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 6px -1px rgba(79, 70, 229, 0.4);
+        }
+
+        .btn:hover {
+            background: var(--primary-hover);
+            transform: translateY(-2px);
+            box-shadow: 0 10px 15px -3px rgba(79, 70, 229, 0.5);
+        }
+
+        .btn:disabled {
+            background: var(--surface-hover);
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        #result {
+            margin-top: 2rem;
+            display: none;
+            animation: fadeIn 0.5s ease;
+        }
+
+        .result-card {
+            background: var(--bg);
+            border-radius: 16px;
+            padding: 2rem;
+            border: 1px solid var(--border);
+        }
+
+        .result-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 1.5rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .status-badge {
+            padding: 0.5rem 1rem;
+            border-radius: 999px;
+            font-size: 0.875rem;
+            font-weight: 600;
+            margin-left: auto;
+        }
+
+        .status-success {
+            background: rgba(16, 185, 129, 0.1);
+            color: var(--success);
+        }
+
+        .status-error {
+            background: rgba(239, 68, 68, 0.1);
+            color: var(--error);
+        }
+
+        .field-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .field {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .field-label {
+            font-size: 0.875rem;
+            color: var(--text-muted);
+            margin-bottom: 0.5rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .field-value {
+            font-size: 1.1rem;
+            font-weight: 500;
+        }
+
+        .loader {
+            display: none;
+            width: 24px;
+            height: 24px;
+            border: 3px solid rgba(255,255,255,0.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 1s ease-in-out infinite;
+            margin: 0 auto;
+        }
+
+        .links {
+            margin-top: 3rem;
+            text-align: center;
+        }
+
+        .links a {
+            color: var(--text-muted);
+            text-decoration: none;
+            margin: 0 1rem;
+            transition: color 0.3s;
+        }
+
+        .links a:hover {
+            color: var(--text);
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        #preview-container {
+            display: none;
+            margin-bottom: 2rem;
+            text-align: center;
+        }
+        
+        #preview-image {
+            max-width: 100%;
+            max-height: 300px;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <div class="header">
+            <h1>SetuGeo OCR Engine</h1>
+            <p>High-precision text extraction for official Indian documents</p>
+        </div>
+
+        <form id="ocrForm">
+            <div class="upload-area" id="dropZone" onclick="document.getElementById('fileInput').click()">
+                <div class="upload-icon">📄</div>
+                <h3 style="margin-bottom: 0.5rem;">Upload Document Image</h3>
+                <p>Drag and drop, or click to browse</p>
+                <p style="font-size: 0.875rem; margin-top: 0.5rem; color: #64748b;">Supports JPEG, PNG, WEBP, BMP</p>
+            </div>
+            
+            <div id="preview-container">
+                <img id="preview-image" src="" alt="Preview" />
+                <div style="margin-top: 0.5rem; color: var(--text-muted); cursor: pointer;" onclick="clearFile()">Change Image</div>
+            </div>
+
+            <input type="file" id="fileInput" class="file-input" accept="image/jpeg, image/png, image/webp, image/bmp, image/tiff" required>
+            
+            <input type="text" id="apiKey" class="api-key-input" placeholder="Enter X-API-KEY" value="your-secret-api-key-change-this" required>
+
+            <div class="select-wrapper">
+                <select id="docType">
+                    <option value="">Auto-Detect Document Type</option>
+                    <option value="pan">PAN Card</option>
+                    <option value="aadhaar_front">Aadhaar Card (Front)</option>
+                    <option value="aadhaar_back">Aadhaar Card (Back)</option>
+                    <option value="voter_id">Voter ID</option>
+                    <option value="dl">Driving License</option>
+                    <option value="passport">Passport</option>
+                </select>
+            </div>
+
+            <button type="submit" class="btn" id="submitBtn">
+                <span id="btnText">Process Document</span>
+                <div class="loader" id="loader"></div>
+            </button>
+        </form>
+
+        <div id="result">
+            <div class="result-card">
+                <div class="result-header">
+                    <h3 id="resDocType">Results</h3>
+                    <div id="resStatus" class="status-badge"></div>
+                </div>
+                
+                <div id="resMessage" style="margin-bottom: 1.5rem; color: var(--text-muted); font-size: 0.95rem;"></div>
+
+                <div class="field-grid" id="fieldsGrid">
+                    <!-- Fields will be populated here -->
+                </div>
+                
+                <div style="margin-top: 2rem;">
+                    <div class="field-label">Raw Text</div>
+                    <pre id="rawText" style="background: var(--surface-hover); padding: 1rem; border-radius: 8px; overflow-x: auto; font-size: 0.85rem; color: #cbd5e1;"></pre>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="links">
+        <a href="/docs">API Documentation</a>
+        <a href="/redoc">ReDoc</a>
+        <a href="/health">Health Check</a>
+    </div>
+
+    <script>
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+        const form = document.getElementById('ocrForm');
+        const submitBtn = document.getElementById('submitBtn');
+        const btnText = document.getElementById('btnText');
+        const loader = document.getElementById('loader');
+        const resultDiv = document.getElementById('result');
+        const previewContainer = document.getElementById('preview-container');
+        const previewImage = document.getElementById('preview-image');
+
+        // Drag and drop events
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, preventDefaults, false);
+        });
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropZone.addEventListener(eventName, () => dropZone.classList.add('dragover'), false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, () => dropZone.classList.remove('dragover'), false);
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            let dt = e.dataTransfer;
+            let files = dt.files;
+            fileInput.files = files;
+            handleFileSelect();
+        });
+
+        fileInput.addEventListener('change', handleFileSelect);
+
+        function handleFileSelect() {
+            if (fileInput.files.length > 0) {
+                const file = fileInput.files[0];
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    previewImage.src = e.target.result;
+                    dropZone.style.display = 'none';
+                    previewContainer.style.display = 'block';
+                }
+                reader.readAsDataURL(file);
+            }
+        }
+        
+        function clearFile() {
+            fileInput.value = '';
+            previewImage.src = '';
+            previewContainer.style.display = 'none';
+            dropZone.style.display = 'block';
+            resultDiv.style.display = 'none';
+        }
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            if (fileInput.files.length === 0) {
+                alert('Please select an image first.');
+                return;
+            }
+
+            const file = fileInput.files[0];
+            const docType = document.getElementById('docType').value;
+            const apiKey = document.getElementById('apiKey').value;
+
+            const formData = new FormData();
+            formData.append('image', file);
+            if (docType) {
+                formData.append('document_type', docType);
+            }
+
+            // UI Loading state
+            btnText.style.display = 'none';
+            loader.style.display = 'block';
+            submitBtn.disabled = true;
+            resultDiv.style.display = 'none';
+
+            try {
+                const response = await fetch('/ocr/extract', {
+                    method: 'POST',
+                    headers: {
+                        'X-API-KEY': apiKey
+                    },
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.detail || 'Something went wrong');
+                }
+
+                displayResult(data);
+            } catch (error) {
+                document.getElementById('resDocType').textContent = 'Error';
+                const statusBadge = document.getElementById('resStatus');
+                statusBadge.textContent = 'Failed';
+                statusBadge.className = 'status-badge status-error';
+                document.getElementById('resMessage').textContent = error.message;
+                document.getElementById('fieldsGrid').innerHTML = '';
+                document.getElementById('rawText').textContent = '';
+                resultDiv.style.display = 'block';
+            } finally {
+                // Reset UI
+                btnText.style.display = 'block';
+                loader.style.display = 'none';
+                submitBtn.disabled = false;
+            }
+        });
+
+        function displayResult(data) {
+            document.getElementById('resDocType').textContent = 
+                data.document_type === 'unknown' ? 'Unknown Document' : 
+                data.document_type.toUpperCase().replace('_', ' ');
+
+            const statusBadge = document.getElementById('resStatus');
+            if (data.success) {
+                statusBadge.textContent = 'Success';
+                statusBadge.className = 'status-badge status-success';
+            } else {
+                statusBadge.textContent = 'Needs Review';
+                statusBadge.className = 'status-badge status-error';
+            }
+
+            document.getElementById('resMessage').textContent = data.message;
+            document.getElementById('rawText').textContent = data.raw_text;
+
+            const fieldsGrid = document.getElementById('fieldsGrid');
+            fieldsGrid.innerHTML = '';
+
+            for (const [key, value] of Object.entries(data.extracted_fields)) {
+                if (key !== 'raw') {
+                    const fieldDiv = document.createElement('div');
+                    fieldDiv.className = 'field';
+                    
+                    const label = document.createElement('div');
+                    label.className = 'field-label';
+                    label.textContent = key.replace('_', ' ');
+                    
+                    const val = document.createElement('div');
+                    val.className = 'field-value';
+                    val.textContent = value || '—';
+                    if (!value) val.style.color = 'var(--text-muted)';
+                    
+                    fieldDiv.appendChild(label);
+                    fieldDiv.appendChild(val);
+                    fieldsGrid.appendChild(fieldDiv);
+                }
+            }
+
+            resultDiv.style.display = 'block';
+            resultDiv.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+    </script>
+</body>
+</html>
