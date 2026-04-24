@@ -39,7 +39,7 @@ use Illuminate\Http\UploadedFile;
 
 public function processDocument(UploadedFile $file)
 {
-    $apiUrl = config('services.ocr.url', 'https://ocr.setugeo.com');
+    $apiUrl = config('services.ocr.url', 'https://api.setugeo.com');
     $apiKey = config('services.ocr.key');
 
     $response = Http::withHeaders([
