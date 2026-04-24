@@ -71,7 +71,38 @@ async def add_process_time_header(request: Request, call_next):
     logger.info(f"Path: {request.url.path} | Method: {request.method} | Duration: {process_time:.4f}s")
     return response
 
-# ── health ───────────────────────────────────────────────────────────────────
+# ── exception handlers ────────────────────────────────────────────────────────
+
+from starlette.exceptions import HTTPException as StarletteHTTPException
+
+@app.exception_handler(StarletteHTTPException)
+async def custom_http_exception_handler(request: Request, exc: StarletteHTTPException):
+    if exc.status_code == 404:
+        return JSONResponse(
+            status_code=404,
+            content={
+                "status": "online",
+                "error": "Not Found",
+                "message": "The SetuGeo OCR service is live, but the URL you are trying to access does not exist.",
+                "requested_path": request.url.path,
+                "docs_url": "/docs"
+            }
+        )
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail}
+    )
+
+# ── root & health ────────────────────────────────────────────────────────────
+
+@app.get("/", tags=["System"])
+def root():
+    """Root endpoint."""
+    return {
+        "service": "SetuGeo OCR Service",
+        "status": "online",
+        "message": "Welcome to SetuGeo OCR. Use /docs for API documentation."
+    }
 
 @app.get("/health", tags=["System"])
 def health():
