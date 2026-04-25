@@ -92,7 +92,7 @@ If you encounter issues when deploying to cPanel:
 
 ### 1. 404 Not Found (Subdomain issue)
 - Ensure your subdomain (`api.setugeo.com`) is pointing to the folder containing the project.
-- Check `.htaccess`. The `PassengerAppRoot` must be the **absolute path** to your project folder (e.g., `/home/username/api.setugeo.com`).
+- Check `.htaccess`. The `PassengerAppRoot` must be the **absolute path** to your project folder (e.g., `/home/username/setuGeoOCR`).
 
 ### 2. 500 Internal Server Error / FastAPI Boot Error
 - This usually means a dependency is missing or the WSGI bridge failed.
