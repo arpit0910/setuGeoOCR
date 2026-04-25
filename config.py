@@ -4,10 +4,17 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Tesseract binary path — Linux default; update via .env for Windows
-TESSERACT_CMD = os.getenv(
-    "TESSERACT_CMD",
-    "/usr/bin/tesseract"
-)
+# Tesseract binary path
+# We try to detect the environment and fallback if the path in .env is invalid for the OS
+_TESS_ENV = os.getenv("TESSERACT_CMD", "")
+if os.name == 'posix':  # Linux/Mac
+    # If .env has a Windows path or is empty, use Linux default
+    if not _TESS_ENV or ":" in _TESS_ENV or not os.path.exists(_TESS_ENV):
+        TESSERACT_CMD = "/usr/bin/tesseract"
+    else:
+        TESSERACT_CMD = _TESS_ENV
+else:  # Windows
+    TESSERACT_CMD = _TESS_ENV or r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 
 # Upload settings
 MAX_FILE_SIZE_MB = int(os.getenv("MAX_FILE_SIZE_MB", 10))

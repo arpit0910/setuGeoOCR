@@ -39,7 +39,7 @@ use Illuminate\Http\UploadedFile;
 
 public function processDocument(UploadedFile $file)
 {
-    $apiUrl = config('services.ocr.url', 'https://api.setugeo.com');
+    $apiUrl = config('services.ocr.url', 'https://api.geosetu.com');
     $apiKey = config('services.ocr.key');
 
     $response = Http::withHeaders([
@@ -85,3 +85,26 @@ public function processDocument(UploadedFile $file)
 
 - The service is protected by `X-API-KEY` header.
 - CORS is enabled for all origins by default; modify `main.py` if you need to restrict it to your Laravel frontend domain.
+
+## 🛠 CPanel Troubleshooting
+
+If you encounter issues when deploying to cPanel:
+
+### 1. 404 Not Found (Subdomain issue)
+- Ensure your subdomain (`api.geosetu.com`) is pointing to the folder containing the project.
+- Check `.htaccess`. The `PassengerAppRoot` must be the **absolute path** to your project folder (e.g., `/home/username/api.geosetu.com`).
+
+### 2. 500 Internal Server Error / FastAPI Boot Error
+- This usually means a dependency is missing or the WSGI bridge failed.
+- **Check `.env`**: Ensure `TESSERACT_CMD` is NOT a Windows path (like `C:\...`). The app will try to auto-detect `/usr/bin/tesseract` on Linux, but a Windows path in `.env` will override it and fail.
+- **Install dependencies**: Use the cPanel "Setup Python App" interface to run `pip install -r requirements.txt`.
+- **Passenger WSGI**: Ensure the "Application Startup File" is set to `passenger_wsgi.py` in the cPanel interface.
+
+### 3. Tesseract Not Found
+- cPanel servers often do not have Tesseract installed by default.
+- You may need to ask your hosting provider to install it, or use a VPS where you can run `sudo apt install tesseract-ocr`.
+- Check the `/health` endpoint to see if Tesseract is detected.
+
+### 4. Permissions
+- Ensure the `ocr_service.log` and `uploads/` directory are writable by the account user.
+- If the app won't start, check the `stderr.log` (if configured in cPanel) or look for a file named `error_log` in the project root.
