@@ -39,7 +39,7 @@ use Illuminate\Http\UploadedFile;
 
 public function processDocument(UploadedFile $file)
 {
-    $apiUrl = config('services.ocr.url', 'https://api.geosetu.com');
+    $apiUrl = config('services.ocr.url', 'https://api.setugeo.com');
     $apiKey = config('services.ocr.key');
 
     $response = Http::withHeaders([
@@ -91,8 +91,8 @@ public function processDocument(UploadedFile $file)
 If you encounter issues when deploying to cPanel:
 
 ### 1. 404 Not Found (Subdomain issue)
-- Ensure your subdomain (`api.geosetu.com`) is pointing to the folder containing the project.
-- Check `.htaccess`. The `PassengerAppRoot` must be the **absolute path** to your project folder (e.g., `/home/username/api.geosetu.com`).
+- Ensure your subdomain (`api.setugeo.com`) is pointing to the folder containing the project.
+- Check `.htaccess`. The `PassengerAppRoot` must be the **absolute path** to your project folder (e.g., `/home/username/api.setugeo.com`).
 
 ### 2. 500 Internal Server Error / FastAPI Boot Error
 - This usually means a dependency is missing or the WSGI bridge failed.

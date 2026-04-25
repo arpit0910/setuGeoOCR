@@ -39,9 +39,9 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "https://geosetu.com",
-        "https://www.geosetu.com",
-        "https://api.geosetu.com",
+        "https://setugeo.com",
+        "https://www.setugeo.com",
+        "https://api.setugeo.com",
         "http://localhost",  # For local development
         "http://127.0.0.1"
     ],
