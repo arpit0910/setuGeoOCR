@@ -16,9 +16,10 @@ os.environ["NUMEXPR_NUM_THREADS"] = "1"
 os.environ["CV_NUM_THREADS"] = "1"
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile, Depends, Security, Request
-from fastapi.responses import JSONResponse, HTMLResponse
+from fastapi.responses import JSONResponse, HTMLResponse, FileResponse
 from fastapi.security.api_key import APIKeyHeader
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.concurrency import run_in_threadpool
 from PIL import Image
 from starlette.status import HTTP_403_FORBIDDEN
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -110,23 +111,23 @@ async def custom_http_exception_handler(request: Request, exc: StarletteHTTPExce
 
 # 6. Routes
 # --------------------------------------------------------------------------
-@app.get("/", response_class=HTMLResponse, tags=["System"])
-def root():
-    """Root endpoint using an absolute path to index.html."""
+@app.get("/", response_class=FileResponse, tags=["System"])
+async def root():
+    """Root endpoint serving index.html."""
     index_path = os.path.join(BASE_DIR, "index.html")
-    try:
-        with open(index_path, "r", encoding="utf-8") as f:
-            return f.read()
-    except FileNotFoundError:
-        return "<h1>SetuGeo OCR</h1><p>Service is running. See <a href='/docs'>/docs</a></p>"
+    if os.path.exists(index_path):
+        return FileResponse(index_path)
+    return HTMLResponse("<h1>SetuGeo OCR</h1><p>Service is running. See <a href='/docs'>/docs</a></p>")
 
 @app.get("/health", tags=["System"])
-def health():
+async def health():
     """Health check endpoint for monitoring."""
     import pytesseract
     tesseract_version = "unknown"
     try:
-        tesseract_version = pytesseract.get_tesseract_version().version
+        # Use run_in_threadpool for binary calls
+        tesseract_version = await run_in_threadpool(pytesseract.get_tesseract_version)
+        tesseract_version = tesseract_version.version
     except Exception:
         pass
     
@@ -137,13 +138,13 @@ def health():
     }
 
 @app.post("/ocr/extract", tags=["OCR"], dependencies=[Depends(get_api_key)])
-def extract(
+async def extract(
     image: UploadFile = File(..., description="Image of the document (JPEG, PNG, WEBP, BMP, TIFF)"),
     document_type: Optional[str] = Form(None),
 ):
     """
     Extract data from a document image.
-    Uses Synchronous 'def' so FastAPI runs it in a threadpool, preventing event loop blocking.
+    Uses run_in_threadpool to offload blocking OCR task to a separate thread.
     """
     # --- LAZY LOADING ---
     try:
@@ -163,16 +164,10 @@ def extract(
     _validate_file(image, document_type)
 
     try:
-        # Use sync read since we are in a regular 'def' function
-        contents = image.file.read()
+        contents = await image.read()
         img = Image.open(io.BytesIO(contents))
-        img.load() 
-    except Exception as e:
-        logger.error(f"Invalid image format: {str(e)}")
-        raise HTTPException(status_code=422, detail="Invalid image format or corrupt file.")
-
-    try:
-        result = process_image(img, document_type or None)
+        # Use run_in_threadpool for the heavy part
+        result = await run_in_threadpool(process_image, img, document_type or None)
         return JSONResponse(content=result)
     except Exception as e:
         logger.exception("OCR Processing Error")
@@ -194,10 +189,8 @@ def _validate_file(file: UploadFile, document_type: Optional[str]):
             detail="Invalid document_type.",
         )
 
-# 8. WSGI Wrapper for cPanel (Passenger)
+# 8. Entry point for local testing
 # --------------------------------------------------------------------------
-from a2wsgi import ASGIMiddleware
-application = ASGIMiddleware(app)
 
 if __name__ == "__main__":
     import uvicorn

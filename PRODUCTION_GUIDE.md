@@ -108,3 +108,12 @@ If you encounter issues when deploying to cPanel:
 ### 4. Permissions
 - Ensure the `ocr_service.log` and `uploads/` directory are writable by the account user.
 - If the app won't start, check the `stderr.log` (if configured in cPanel) or look for a file named `error_log` in the project root.
+
+### 5. Request Timeout / Infinite Loader
+- **Symptoms**: The page shows a loading indicator forever or returns a 'Request Timeout' error (504).
+- **Cause**: The Python process is taking too long to respond to the initial request, often due to resource limits (threads) or blocking initialization.
+- **Fixes Applied**:
+    - We have moved all routes to 'async def' and use 'run_in_threadpool' for OCR tasks to prevent blocking the event loop.
+    - We have added strict environment variable thread limiting at the absolute top of 'main.py' and 'passenger_wsgi.py' (e.g., 'OPENBLAS_NUM_THREADS=1').
+- **Required Action**: If the live site ('https://api.setugeo.com') still times out, ensure the **Absolute Paths** in '.htaccess' are correct for your current server (check if '/home/outgglmv/' is still your username).
+- **Frontend Timeout**: The 'index.html' now has a 60-second timeout built-in to prevent the UI from hanging if the server is slow.
