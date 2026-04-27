@@ -21,6 +21,12 @@ with open(log_path, "a") as f:
     f.flush()
 
 try:
+    import asyncio
+    try:
+        asyncio.get_event_loop()
+    except RuntimeError:
+        asyncio.set_event_loop(asyncio.new_event_loop())
+
     from a2wsgi import ASGIMiddleware
     from main import app
     application = ASGIMiddleware(app)

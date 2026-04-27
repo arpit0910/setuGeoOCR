@@ -3,8 +3,8 @@ PassengerAppRoot "/home/outgglmv/setuGeoOCR"
 PassengerBaseURI "/"
 PassengerPython "/home/outgglmv/virtualenv/setuGeoOCR/3.11/bin/python"
 # DO NOT REMOVE. CLOUDLINUX PASSENGER CONFIGURATION END
+
 # --- PASSENGER CONFIGURATION ---
-# This tells the server to use the Python engine for this folder
 PassengerEnabled on
 PassengerAppType wsgi
 PassengerStartupFile passenger_wsgi.py
@@ -19,7 +19,6 @@ PassengerMinInstances 1
     RewriteEngine On
     
     # 1. Handle Canonical Host & Force HTTPS
-    # Ensure all traffic hits https://api.setugeo.com (except local dev)
     RewriteCond %{HTTP_HOST} !^api\.setugeo\.com$ [NC]
     RewriteCond %{HTTP_HOST} !^localhost$ [NC]
     RewriteCond %{HTTP_HOST} !^127\.0\.0\.1$ [NC]
@@ -30,17 +29,14 @@ PassengerMinInstances 1
     RewriteCond %{HTTP_HOST} !^127\.0\.0\.1$ [NC]
     RewriteRule ^ https://api.setugeo.com%{REQUEST_URI} [R=301,L]
 
-    # 2. Prevent Apache from blocking the WSGI entry point
-    # We allow .py files to be accessed by the Passenger engine internally
-    RewriteRule (^|/)(\.env|\.git|Dockerfile|requirements\.txt)$ - [F,L,NC]
+    # 2. Prevent direct access to sensitive files
+    RewriteRule (^|/)(\.env|\.git|requirements\.txt|passenger_debug\.log|error_debug\.log)$ - [F,L,NC]
 </IfModule>
 
 # --- SECURITY HEADERS ---
 <IfModule mod_headers.c>
-    Header always set X-Content-Type-Options "nosniff"
-    Header always set X-Frame-Options "DENY"
-    Header always set Referrer-Policy "no-referrer-when-downgrade"
+    Header set X-Content-Type-Options "nosniff"
+    Header set X-Frame-Options "SAMEORIGIN"
+    Header set X-XSS-Protection "1; mode=block"
+    Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"
 </IfModule>
-
-# Match the application upload limit (10MB for OCR images)
-LimitRequestBody 10485760
