@@ -432,32 +432,59 @@
             submitBtn.disabled = true;
             resultDiv.style.display = 'none';
 
+            // AbortController for timeout (60 seconds)
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 60000);
+
             try {
-                const response = await fetch('/ocr/extract', {
+                // Determine API endpoint: use current path if at root, otherwise relative
+                // This handles cases where the app is in a subdirectory or on a different port
+                const apiEndpoint = window.location.pathname.endsWith('/') ? 'ocr/extract' : './ocr/extract';
+                
+                const response = await fetch(apiEndpoint, {
                     method: 'POST',
                     headers: {
                         'X-API-KEY': apiKey
                     },
-                    body: formData
+                    body: formData,
+                    signal: controller.signal
                 });
 
-                const data = await response.json();
+                clearTimeout(timeoutId);
+
+                let data;
+                const contentType = response.headers.get("content-type");
+                if (contentType && contentType.indexOf("application/json") !== -1) {
+                    data = await response.json();
+                } else {
+                    const text = await response.text();
+                    throw new Error(`Server returned non-JSON response (${response.status}): ${text.substring(0, 100)}...`);
+                }
 
                 if (!response.ok) {
-                    throw new Error(data.detail || 'Something went wrong');
+                    throw new Error(data.detail || data.message || 'Something went wrong');
                 }
 
                 displayResult(data);
             } catch (error) {
+                console.error('OCR Error:', error);
                 document.getElementById('resDocType').textContent = 'Error';
                 const statusBadge = document.getElementById('resStatus');
                 statusBadge.textContent = 'Failed';
                 statusBadge.className = 'status-badge status-error';
-                document.getElementById('resMessage').textContent = error.message;
+                
+                let errorMsg = error.message;
+                if (error.name === 'AbortError') {
+                    errorMsg = 'Request timed out. The server took too long to process the image. Please try a smaller or clearer image.';
+                }
+                
+                document.getElementById('resMessage').textContent = errorMsg;
                 document.getElementById('fieldsGrid').innerHTML = '';
                 document.getElementById('rawText').textContent = '';
                 resultDiv.style.display = 'block';
+                resultDiv.scrollIntoView({ behavior: 'smooth', block: 'start' });
             } finally {
+                clearTimeout(timeoutId);
                 // Reset UI
                 btnText.style.display = 'block';
                 loader.style.display = 'none';

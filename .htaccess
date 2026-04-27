@@ -17,11 +17,15 @@ PassengerPython "/home/outgglmv/virtualenv/setuGeoOCR/3.11/bin/python"
     RewriteEngine On
     
     # 1. Handle Canonical Host & Force HTTPS
-    # Ensure all traffic hits https://api.setugeo.com
+    # Ensure all traffic hits https://api.setugeo.com (except local dev)
     RewriteCond %{HTTP_HOST} !^api\.setugeo\.com$ [NC]
+    RewriteCond %{HTTP_HOST} !^localhost$ [NC]
+    RewriteCond %{HTTP_HOST} !^127\.0\.0\.1$ [NC]
     RewriteRule ^ https://api.setugeo.com%{REQUEST_URI} [R=301,L]
     
     RewriteCond %{HTTPS} !=on
+    RewriteCond %{HTTP_HOST} !^localhost$ [NC]
+    RewriteCond %{HTTP_HOST} !^127\.0\.0\.1$ [NC]
     RewriteRule ^ https://api.setugeo.com%{REQUEST_URI} [R=301,L]
 
     # 2. Prevent Apache from blocking the WSGI entry point

@@ -1,8 +1,19 @@
-import io
 import os
+import io
 import logging
 import time
 from typing import Optional
+
+# 1. Environment & Thread Configuration (CRITICAL: MUST BE AT THE ABSOLUTE TOP)
+# --------------------------------------------------------------------------
+# Limit threads before any OCR-related libraries (cv2, numpy) are imported.
+# This prevents "Resource temporarily unavailable" errors on shared hosting.
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
+os.environ["CV_NUM_THREADS"] = "1"
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile, Depends, Security, Request
 from fastapi.responses import JSONResponse, HTMLResponse
@@ -11,16 +22,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image
 from starlette.status import HTTP_403_FORBIDDEN
 from starlette.exceptions import HTTPException as StarletteHTTPException
-
-# 1. Environment & Thread Configuration
-# --------------------------------------------------------------------------
-# CRITICAL: Limit threads before any OCR-related libraries are imported.
-# This prevents "Resource temporarily unavailable" errors on shared hosting.
-os.environ["OPENBLAS_NUM_THREADS"] = "1"
-os.environ["MKL_NUM_THREADS"] = "1"
-os.environ["OMP_NUM_THREADS"] = "1"
-os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
-os.environ["NUMEXPR_NUM_THREADS"] = "1"
 
 # Define base directory for absolute pathing
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -136,18 +137,23 @@ def health():
     }
 
 @app.post("/ocr/extract", tags=["OCR"], dependencies=[Depends(get_api_key)])
-async def extract(
+def extract(
     image: UploadFile = File(..., description="Image of the document (JPEG, PNG, WEBP, BMP, TIFF)"),
     document_type: Optional[str] = Form(None),
 ):
     """
     Extract data from a document image.
-    Uses LAZY LOADING to prevent startup timeouts on shared hosting.
+    Uses Synchronous 'def' so FastAPI runs it in a threadpool, preventing event loop blocking.
     """
     # --- LAZY LOADING ---
-    # We import the heavy processor ONLY when this route is hit.
     try:
         from ocr_processor import process_image
+        # Additional OpenCV thread limit
+        try:
+            import cv2
+            cv2.setNumThreads(0)
+        except ImportError:
+            pass
     except ImportError as e:
         logger.error(f"Failed to import ocr_processor: {e}")
         raise HTTPException(status_code=500, detail="OCR Engine failed to initialize.")
@@ -157,9 +163,10 @@ async def extract(
     _validate_file(image, document_type)
 
     try:
-        contents = await image.read()
+        # Use sync read since we are in a regular 'def' function
+        contents = image.file.read()
         img = Image.open(io.BytesIO(contents))
-        img.load() # Force the image data to load into memory
+        img.load() 
     except Exception as e:
         logger.error(f"Invalid image format: {str(e)}")
         raise HTTPException(status_code=422, detail="Invalid image format or corrupt file.")

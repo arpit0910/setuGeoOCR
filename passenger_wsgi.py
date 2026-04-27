@@ -8,6 +8,7 @@ os.environ["MKL_NUM_THREADS"] = "1"
 os.environ["OMP_NUM_THREADS"] = "1"
 os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
 os.environ["NUMEXPR_NUM_THREADS"] = "1"
+os.environ["CV_NUM_THREADS"] = "1"
 
 # 2. Add the project directory to path
 sys.path.insert(0, os.path.dirname(__file__))

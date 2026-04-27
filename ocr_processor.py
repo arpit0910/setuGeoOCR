@@ -52,8 +52,8 @@ def _run_ocr(img: Image.Image) -> str:
 
 # ── document-type detection ──────────────────────────────────────────────────
 
-_PAN_SIGNALS      = {"INCOME TAX DEPARTMENT", "PERMANENT ACCOUNT NUMBER", "INCOME TAX DEPT"}
-_AADHAAR_SIGNALS  = {"GOVERNMENT OF INDIA", "UIDAI", "UNIQUE IDENTIFICATION"}
+_PAN_SIGNALS      = {"INCOME TAX DEPARTMENT", "PERMANENT ACCOUNT NUMBER", "INCOME TAX DEPT", "INCOMETAMDEPARIMENT"}
+_AADHAAR_SIGNALS  = {"GOVERNMENT OF INDIA", "UIDAI", "UNIQUE IDENTIFICATION", "GOUERNMENT OF INDIA"}
 _VOTER_SIGNALS    = {"ELECTION COMMISSION", "ELECTOR PHOTO IDENTITY CARD", "ELECTOR'S PHOTO IDENTITY CARD"}
 _DL_SIGNALS       = {"DRIVING LICENCE", "DRIVING LICENSE", "MOTOR VEHICLE", "UNION OF INDIA"}
 _PASSPORT_SIGNALS = {"REPUBLIC OF INDIA", "PASSPORT", "REPUBLIQUE DE L'INDE"}
@@ -64,8 +64,11 @@ _AADHAAR_BACK_HINTS  = {"S/O", "D/O", "W/O", "C/O", "VILLAGE", "DISTRICT", "ADDR
 
 def _detect_type(text: str) -> str:
     upper = text.upper()
+    import re
 
-    if any(s in upper for s in _PAN_SIGNALS):
+    # High-confidence signals
+    # PAN Card: 5 letters, 4 digits, 1 letter
+    if any(s in upper for s in _PAN_SIGNALS) or re.search(r'[A-Z]{5}[0-9]{4}[A-Z]', upper, re.I):
         return "pan"
 
     if any(s in upper for s in _VOTER_SIGNALS):
@@ -77,13 +80,22 @@ def _detect_type(text: str) -> str:
     if any(s in upper for s in _DL_SIGNALS) or ("DL" in upper and "DOB" in upper and "ISSUE" in upper):
         return "dl"
 
-    if any(s in upper for s in _AADHAAR_SIGNALS):
+    # Aadhaar detection (Front/Back)
+    # Aadhaar: 12 digits (often with spaces/dashes)
+    is_aadhaar = any(s in upper for s in _AADHAAR_SIGNALS) or re.search(r'[0-9]{4}[\s\-][0-9]{4}[\s\-][0-9]{4}', upper)
+    
+    if is_aadhaar:
         front_score = sum(1 for h in _AADHAAR_FRONT_HINTS if h in upper)
         back_score  = sum(1 for h in _AADHAAR_BACK_HINTS  if h in upper)
+        
+        # If it has address indicators, it's likely back
+        if any(h in upper for h in ["ADDRESS", "VILLAGE", "DISTRICT", "PINCODE", "S/O", "D/O", "W/O"]):
+            back_score += 2
+            
         return "aadhaar_front" if front_score >= back_score else "aadhaar_back"
 
     # Fallback heuristics if signals missed
-    if "ADDRESS:" in upper or "FATHER:" in upper or "W/O" in upper or "S/O" in upper:
+    if "ADDRESS:" in upper or "FATHER:" in upper or "W/O" in upper or "S/O" in upper or "C/O" in upper:
         return "aadhaar_back"  # Common for cropped aadhaar back
 
     return "unknown"
