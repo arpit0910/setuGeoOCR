@@ -36,8 +36,8 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler(log_file_path)
+        logging.StreamHandler()
+        # logging.FileHandler(log_file_path)
     ]
 )
 logger = logging.getLogger("setu-geo-ocr")
@@ -84,16 +84,8 @@ async def get_api_key(api_key: str = Security(api_key_header)):
         status_code=HTTP_403_FORBIDDEN, detail="Could not validate credentials"
     )
 
-# 5. Middleware & Exception Handlers
+# 5. Exception Handlers
 # --------------------------------------------------------------------------
-@app.middleware("http")
-async def add_process_time_header(request: Request, call_next):
-    start_time = time.time()
-    response = await call_next(request)
-    process_time = time.time() - start_time
-    response.headers["X-Process-Time"] = str(process_time)
-    logger.info(f"Path: {request.url.path} | Method: {request.method} | Duration: {process_time:.4f}s")
-    return response
 
 @app.exception_handler(StarletteHTTPException)
 async def custom_http_exception_handler(request: Request, exc: StarletteHTTPException):
@@ -111,13 +103,15 @@ async def custom_http_exception_handler(request: Request, exc: StarletteHTTPExce
 
 # 6. Routes
 # --------------------------------------------------------------------------
-@app.get("/", response_class=FileResponse, tags=["System"])
+@app.get("/", response_class=HTMLResponse, tags=["System"])
 async def root():
     """Root endpoint serving index.html."""
     index_path = os.path.join(BASE_DIR, "index.html")
-    if os.path.exists(index_path):
-        return FileResponse(index_path)
-    return HTMLResponse("<h1>SetuGeo OCR</h1><p>Service is running. See <a href='/docs'>/docs</a></p>")
+    try:
+        with open(index_path, "r", encoding="utf-8") as f:
+            return HTMLResponse(content=f.read())
+    except Exception:
+        return HTMLResponse("<h1>SetuGeo OCR</h1><p>Service is running. See <a href='/docs'>/docs</a></p>")
 
 @app.get("/health", tags=["System"])
 async def health():
