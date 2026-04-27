@@ -104,14 +104,17 @@ async def custom_http_exception_handler(request: Request, exc: StarletteHTTPExce
 # 6. Routes
 # --------------------------------------------------------------------------
 @app.get("/", response_class=HTMLResponse, tags=["System"])
-async def root():
+def root():
     """Root endpoint serving index.html."""
+    logger.info("Root endpoint called")
     index_path = os.path.join(BASE_DIR, "index.html")
     try:
         with open(index_path, "r", encoding="utf-8") as f:
-            return HTMLResponse(content=f.read())
-    except Exception:
-        return HTMLResponse("<h1>SetuGeo OCR</h1><p>Service is running. See <a href='/docs'>/docs</a></p>")
+            content = f.read()
+            return HTMLResponse(content=content)
+    except Exception as e:
+        logger.error(f"Error reading index.html: {e}")
+        return HTMLResponse("<h1>SetuGeo OCR</h1><p>Service is running.</p>")
 
 @app.get("/health", tags=["System"])
 async def health():
