@@ -1,0 +1,7 @@
+Traceback (most recent call last):
+  File "D:\xampp\htdocs\setuGeoOCR\test_easyocr.py", line 8, in <module>
+    reader = easyocr.Reader(['en', 'hi'], gpu=False, verbose=False)
+  File "C:\Users\arpit\AppData\Local\Programs\Python\Python314\Lib\site-packages\easyocr\easyocr.py", line 184, in __init__
+    LOGGER.warning(corrupt_msg)
+                   ^^^^^^^^^^^
+NameError: name 'corrupt_msg' is not defined

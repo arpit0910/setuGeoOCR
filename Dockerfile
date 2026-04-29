@@ -6,10 +6,7 @@ ENV PYTHONDONTWRITEBYTECODE 1
 ENV PYTHONUNBUFFERED 1
 
 # Install system dependencies
-# Tesseract OCR and its data files are needed
 RUN apt-get update && apt-get install -y \
-    tesseract-ocr \
-    libtesseract-dev \
     libsm6 \
     libxext6 \
     libxrender-dev \
@@ -27,8 +24,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the rest of the application code
 COPY . .
 
-# Create uploads directory if it doesn't exist
+# Create uploads directory
 RUN mkdir -p uploads
+
+# Pre-download EasyOCR models (English and Hindi)
+RUN python -c "import easyocr; reader = easyocr.Reader(['en', 'hi'], gpu=False)"
 
 # Expose the port the app runs on
 EXPOSE 8001

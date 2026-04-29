@@ -36,8 +36,8 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     handlers=[
-        logging.StreamHandler()
-        # logging.FileHandler(log_file_path)
+        logging.StreamHandler(),
+        logging.FileHandler(log_file_path)
     ]
 )
 logger = logging.getLogger("setu-geo-ocr")
@@ -104,7 +104,7 @@ async def custom_http_exception_handler(request: Request, exc: StarletteHTTPExce
 # 6. Routes
 # --------------------------------------------------------------------------
 @app.get("/", response_class=HTMLResponse, tags=["System"])
-def root():
+async def root():
     """Root endpoint serving index.html."""
     logger.info("Root endpoint called")
     index_path = os.path.join(BASE_DIR, "index.html")
@@ -162,6 +162,7 @@ async def extract(
 
     try:
         contents = await image.read()
+        
         img = Image.open(io.BytesIO(contents))
         # Use run_in_threadpool for the heavy part
         result = await run_in_threadpool(process_image, img, document_type or None)

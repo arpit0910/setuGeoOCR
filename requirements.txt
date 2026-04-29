@@ -8,3 +8,7 @@ opencv-python>=4.8.0.76
 numpy>=1.24.3
 python-dotenv>=1.0.0
 a2wsgi>=1.7.0
+
+easyocr>=1.7.1
+torch>=2.1.0
+torchvision>=0.16.0

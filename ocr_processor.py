@@ -1,11 +1,32 @@
 import pytesseract
+import config
+import os
+import re
+import numpy as np
 from PIL import Image
 from typing import Any, Dict, Optional
-
-import config
 from utils.image_utils import preprocess
 from extractors.pan import extract_pan
 from extractors.aadhaar import extract_aadhaar
+
+# OCR Engine State
+_EASYOCR_READER = None
+
+def _get_easyocr_reader():
+    global _EASYOCR_READER
+    if _EASYOCR_READER is None:
+        try:
+            import easyocr
+            import logging
+            # Set a persistent model storage directory in the project
+            model_dir = os.path.join(config.BASE_DIR, "models", "easyocr")
+            os.makedirs(model_dir, exist_ok=True)
+            
+            logging.getLogger('easyocr').setLevel(logging.ERROR)
+            _EASYOCR_READER = easyocr.Reader(['en'], gpu=False, verbose=False, model_storage_directory=model_dir)
+        except Exception as e:
+            _EASYOCR_READER = None
+    return _EASYOCR_READER
 
 # Point pytesseract at the Tesseract binary
 pytesseract.pytesseract.tesseract_cmd = config.TESSERACT_CMD
@@ -15,18 +36,48 @@ pytesseract.pytesseract.tesseract_cmd = config.TESSERACT_CMD
 
 def process_image(img: Image.Image, document_type: Optional[str] = None) -> dict:
     """
-    Main entry point.
-    - Preprocesses the image for Tesseract.
-    - Runs OCR.
-    - Auto-detects document type if not provided.
-    - Extracts structured fields.
-    Returns a dict with document_type, raw_text, and extracted_fields.
+    Primary: Deep Learning (EasyOCR) with Spatial Awareness.
+    Secondary: Tesseract (Fallback).
     """
-    processed = preprocess(img)
-    raw_text  = _run_ocr(processed)
+    raw_text = ""
+    detailed_results = []
+    
+    # 1. Try EasyOCR (Deep Learning)
+    reader = _get_easyocr_reader()
+    if reader:
+        try:
+            import numpy as np
+            img_rgb = np.array(img.convert('RGB'))
+            # Get boxes + text + confidence
+            detailed_results = reader.readtext(img_rgb)
+            raw_text = "\n".join([res[1] for res in detailed_results])
+        except Exception as e:
+            print(f"EasyOCR failed: {e}")
 
-    detected_type = document_type or _detect_type(raw_text)
-    extracted_fields = _extract(raw_text, detected_type)
+    # 2. Fallback to Tesseract if EasyOCR missed everything
+    if not raw_text.strip():
+        processed = preprocess(img)
+        raw_text = _run_tesseract(processed)
+
+    detected_type = document_type if document_type and document_type != "None" else _detect_type(raw_text)
+    
+    # 3. Extract with spatial awareness if available
+    if detected_type == "pan":
+        extracted_fields = extract_pan(raw_text, detailed_results)
+    elif detected_type in ("aadhaar_front", "aadhaar_back"):
+        extracted_fields = extract_aadhaar(raw_text, detected_type, detailed_results)
+    elif detected_type == "voter_id":
+        from extractors.voter_id import extract_voter_id
+        extracted_fields = extract_voter_id(raw_text, detailed_results)
+    elif detected_type == "dl":
+        from extractors.dl import extract_dl
+        extracted_fields = extract_dl(raw_text, detailed_results)
+    elif detected_type == "passport":
+        from extractors.passport import extract_passport
+        extracted_fields = extract_passport(raw_text, detailed_results)
+    else:
+        extracted_fields = _extract(raw_text, detected_type)
+    
     validation = _validate_extraction(detected_type, extracted_fields, raw_text)
 
     return {
@@ -42,7 +93,35 @@ def process_image(img: Image.Image, document_type: Optional[str] = None) -> dict
 
 # ── OCR ──────────────────────────────────────────────────────────────────────
 
-def _run_ocr(img: Image.Image) -> str:
+def _run_tesseract_detailed(img: Image.Image) -> dict:
+    """
+    Runs Tesseract in data mode to get coordinates and confidence for each word.
+    """
+    import pytesseract
+    data = pytesseract.image_to_data(
+        img,
+        lang=config.TESSERACT_LANG,
+        config=config.TESSERACT_CONFIG,
+        output_type=pytesseract.Output.DICT
+    )
+    
+    # Reconstruct lines based on block/line numbers
+    lines = {}
+    for i in range(len(data['text'])):
+        if int(data['conf']) > 10:  # Ignore very low confidence noise
+            line_id = f"{data['block_num'][i]}_{data['line_num'][i]}"
+            if line_id not in lines:
+                lines[line_id] = []
+            lines[line_id].append(data['text'][i])
+    
+    full_text = "\n".join([" ".join(words) for words in lines.values()])
+    return {
+        "text": full_text,
+        "data": data
+    }
+
+def _run_tesseract(img: Image.Image) -> str:
+    # Basic fallback to string mode
     return pytesseract.image_to_string(
         img,
         lang=config.TESSERACT_LANG,

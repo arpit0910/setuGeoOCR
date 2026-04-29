@@ -22,7 +22,7 @@ ALLOWED_EXTENSIONS = {"image/jpeg", "image/png", "image/webp", "image/bmp", "ima
 
 # OCR settings
 TESSERACT_LANG = os.getenv("TESSERACT_LANG", "eng")
-TESSERACT_CONFIG = os.getenv("TESSERACT_CONFIG", "--oem 3 --psm 6")
+TESSERACT_CONFIG = os.getenv("TESSERACT_CONFIG", "--oem 3 --psm 3")
 
 # Service settings
 HOST = os.getenv("HOST", "127.0.0.1")

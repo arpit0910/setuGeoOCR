@@ -5,20 +5,21 @@ from PIL import Image
 
 def preprocess(img: Image.Image) -> Image.Image:
     """
-    Full preprocessing pipeline:
-    1. Convert to grayscale
-    2. Upscale if too small (Tesseract needs ~300 DPI equivalent)
-    3. Denoise
-    4. Adaptive threshold (binarize)
-    5. Deskew if tilted
+    High-fidelity grayscale preprocessing for Tesseract LSTM.
     """
     img_cv = _pil_to_cv(img)
-    gray  = _to_grayscale(img_cv)
-    gray  = _upscale_if_needed(gray)
-    gray  = _denoise(gray)
-    binary = _binarize(gray)
-    binary = _deskew(binary)
-    return Image.fromarray(binary)
+    gray = _to_grayscale(img_cv)
+    
+    # 1. Upscale significantly (Tesseract loves large letters)
+    gray = _upscale_if_needed(gray, min_width=3000)
+    
+    # 2. Subtle Denoise to remove WhatsApp JPEG artifacts
+    denoised = cv2.fastNlMeansDenoising(gray, h=10)
+    
+    # 3. Contrast Normalization
+    normalized = cv2.normalize(denoised, None, 0, 255, cv2.NORM_MINMAX)
+    
+    return Image.fromarray(normalized)
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
