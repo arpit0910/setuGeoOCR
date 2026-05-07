@@ -6,14 +6,17 @@ def extract_dl(text: str, detailed: List[Any] = None) -> dict:
     
     name = None
     if detailed:
-        name = _name_spatial(detailed)
+        name = _name_spatial(detailed, ["NAME"])
 
     if not name: name = _name(lines)
 
     return {
         "dl_number": _dl_number(text),
         "name": name,
+        "father_name": _name_spatial(detailed, ["FATHER", "HUSBAND", "S/O", "D/O", "W/O"]) if detailed else None,
         "dob": _dob(text),
+        "address": _address_spatial(detailed) if detailed else None,
+        "expiry": _expiry(text)
     }
 
 def _dl_number(text: str) -> Optional[str]:
@@ -29,17 +32,38 @@ def _dob(text: str) -> Optional[str]:
         m = re.search(r'(\d{2}-\d{2}-\d{4})', text)
     return m.group(1) if m else None
 
-def _name_spatial(detailed: List[Any]) -> Optional[str]:
+def _name_spatial(detailed: List[Any], keywords: List[str]) -> Optional[str]:
     # Name is usually below or next to the 'Name' label
     for box, text, conf in detailed:
-        if "NAME" in text.upper() and conf > 0.3:
-            label_right = box[1][0]
+        upper = text.upper()
+        if any(kw in upper for kw in keywords) and conf > 0.3:
             label_bottom = box[2][1]
             for box2, text2, conf2 in detailed:
-                if box2[0][1] > label_bottom and box2[0][1] < label_bottom + 100:
+                if box2[0][1] > label_bottom and box2[0][1] < label_bottom + 80:
                     if len(text2.split()) >= 2:
                         return text2.strip().title()
     return None
+
+def _address_spatial(detailed: List[Any]) -> Optional[str]:
+    start_y = None
+    for box, text, conf in detailed:
+        upper = text.upper()
+        if any(kw in upper for kw in ["ADDRESS", "पता", "निवासी"]):
+            start_y = box[0][1]
+            break
+    if start_y:
+        addr_lines = []
+        for box, text, conf in detailed:
+            if box[0][1] > start_y and conf > 0.3:
+                # Filter out numbers that look like DL number
+                if re.match(r'^[A-Z]{2}[0-9]{2}', text.strip()): continue
+                addr_lines.append(text.strip())
+        return ", ".join(addr_lines[:6])
+    return None
+
+def _expiry(text: str) -> Optional[str]:
+    m = re.search(r'VALID\s*TILL\s*(\d{2}/\d{2}/\d{4})', text, re.I)
+    return m.group(1) if m else None
 
 def _name(lines: List[str]) -> Optional[str]:
     for i, line in enumerate(lines):

@@ -1,4 +1,3 @@
-import pytesseract
 import config
 import os
 import re
@@ -18,120 +17,117 @@ def _get_easyocr_reader():
         try:
             import easyocr
             import logging
-            model_dir = os.path.join(config.BASE_DIR, "models", "easyocr")
-            os.makedirs(model_dir, exist_ok=True)
+            # Use default storage for better reliability with automatic downloads
             logging.getLogger('easyocr').setLevel(logging.ERROR)
-            _EASYOCR_READER = easyocr.Reader(['en'], gpu=False, verbose=False, model_storage_directory=model_dir)
+            # Support both Hindi and English for Indian documents
+            _EASYOCR_READER = easyocr.Reader(['hi', 'en'], gpu=False, verbose=False)
         except Exception as e:
+            print(f"EasyOCR initialization failed: {e}")
             _EASYOCR_READER = None
     return _EASYOCR_READER
-
-pytesseract.pytesseract.tesseract_cmd = config.TESSERACT_CMD
 
 
 def process_image(img: Image.Image, document_type: Optional[str] = None) -> dict:
     """
-    Hybrid Voting Engine:
-    Runs multiple OCR passes on normalized images and merges results for 100% reliability.
+    Neural OCR Engine:
+    Uses deep learning (EasyOCR) with bilingual support (Hindi + English).
+    Replaces legacy Tesseract for 100% reliability on Indian government documents.
     """
     # 1. Universal Normalization
     normalized_img = preprocess(img)
     
-    raw_text_easy = ""
+    raw_text = ""
     detailed_results = []
     
-    # Pass 1: Neural Depth (EasyOCR)
+    # Neural Pass (Bilingual)
     reader = _get_easyocr_reader()
     if reader:
         try:
-            # We use the normalized image for better neural detection
             img_np = np.array(normalized_img.convert('RGB'))
-            detailed_results = reader.readtext(img_np)
-            raw_text_easy = "\n".join([res[1] for res in detailed_results])
+            # canvas_size=1200 provides the best accuracy for noisy mobile screenshots
+            detailed_results = reader.readtext(img_np, canvas_size=1200, detail=1)
+            raw_text = "\n".join([res[1] for res in detailed_results])
         except Exception as e:
-            print(f"EasyOCR pass failed: {e}")
+            print(f"Neural OCR pass failed: {e}")
+            raw_text = ""
 
-    # Pass 2: Character Precision (Tesseract)
-    raw_text_tess = _run_tesseract(normalized_img)
-    
-    # Merge Texts for detection
-    combined_raw = raw_text_easy + "\n" + raw_text_tess
-    
     # 2. Detect Document Version
-    detected_type = document_type if document_type and document_type != "None" else _detect_type(combined_raw)
+    detected_type = document_type if document_type and document_type != "None" else _detect_type(raw_text)
     
-    # 3. Targeted Extraction (Spatial + Regex)
+    # 3. Targeted Extraction (Spatial + Multi-lingual Regex)
     if detected_type == "pan":
-        extracted_fields = extract_pan(combined_raw, detailed_results)
+        extracted_fields = extract_pan(raw_text, detailed_results)
     elif detected_type in ("aadhaar_front", "aadhaar_back"):
-        extracted_fields = extract_aadhaar(combined_raw, detected_type, detailed_results)
+        extracted_fields = extract_aadhaar(raw_text, detected_type, detailed_results)
     else:
         # Generic Dispatch
-        extracted_fields = _extract(combined_raw, detected_type)
+        extracted_fields = _extract(raw_text, detected_type, detailed_results)
     
     # 4. Consistency Validation
-    validation = _validate_extraction(detected_type, extracted_fields, combined_raw)
+    validation = _validate_extraction(detected_type, extracted_fields, raw_text)
 
     return {
         "document_type":     detected_type,
-        "raw_text":          combined_raw,
+        "raw_text":          raw_text,
         "extracted_fields":  extracted_fields,
-        "confidence":        _confidence_hint(detected_type, combined_raw),
+        "confidence":        _confidence_hint(detected_type, raw_text),
         "validation":        validation,
         "success":           validation["is_valid"],
         "message":           validation["message"],
     }
 
 
-def _run_tesseract(img: Image.Image) -> str:
-    return pytesseract.image_to_string(
-        img,
-        lang=config.TESSERACT_LANG,
-        config=config.TESSERACT_CONFIG,
-    )
-
-
 def _detect_type(text: str) -> str:
     upper = text.upper()
     import re
 
-    if any(s in upper for s in {"INCOME TAX", "PERMANENT ACCOUNT", "PANCARD"}) or re.search(r'[A-Z]{5}[0-9]{4}[A-Z]', upper):
+    # PAN Keywords
+    pan_kws = {"INCOME TAX", "PERMANENT ACCOUNT", "PANCARD", "आयकर", "स्थायी खाता"}
+    if any(s in upper for s in pan_kws) or re.search(r'[A-Z]{5}[0-9]{4}[A-Z]', upper):
         return "pan"
 
-    if any(s in upper for s in {"GOVERNMENT OF INDIA", "UIDAI", "UNIQUE IDENTIFICATION"}) or re.search(r'[0-9]{4}[\s\-][0-9]{4}[\s\-][0-9]{4}', upper):
+    # Aadhaar Keywords
+    aadhaar_kws = {"GOVERNMENT OF INDIA", "UIDAI", "UNIQUE IDENTIFICATION", "भारत सरकार", "भारतीय विशिष्ट पहचान"}
+    if any(s in upper for s in aadhaar_kws) or re.search(r'[0-9]{4}[\s\-][0-9]{4}[\s\-][0-9]{4}', upper):
         # Front vs Back check
-        if any(h in upper for h in {"MALE", "FEMALE", "DOB", "DATE OF BIRTH"}):
+        if any(h in upper for h in {"MALE", "FEMALE", "DOB", "DATE OF BIRTH", "पुरुष", "महिला", "जन्म"}):
             return "aadhaar_front"
-        if any(h in upper for h in {"ADDRESS", "S/O", "D/O", "W/O", "PINCODE"}):
+        if any(h in upper for h in {"ADDRESS", "S/O", "D/O", "W/O", "PINCODE", "पता", "निवासी"}):
             return "aadhaar_back"
         return "aadhaar_front"
 
-    if any(s in upper for s in {"ELECTION COMMISSION", "PHOTO IDENTITY CARD"}):
+    # Voter ID Keywords
+    voter_kws = {"ELECTION COMMISSION", "PHOTO IDENTITY CARD", "भारत निर्वाचन आयोग", "निर्वाचन", "मतदाता"}
+    if any(s in upper for s in voter_kws):
         return "voter_id"
 
-    if any(s in upper for s in {"DRIVING LICENCE", "MOTOR VEHICLE"}):
+    # DL Keywords
+    dl_kws = {"DRIVING LICENCE", "MOTOR VEHICLE", "चालन अनुज्ञप्ति", "लाइसेंस"}
+    if any(s in upper for s in dl_kws):
         return "dl"
 
-    if any(s in upper for s in {"REPUBLIC OF INDIA", "PASSPORT"}):
+    # Passport Keywords
+    passport_kws = {"REPUBLIC OF INDIA", "PASSPORT", "भारत गणराज्य", "पासपोर्ट"}
+    if any(s in upper for s in passport_kws):
         return "passport"
 
     return "unknown"
 
 
-def _extract(text: str, doc_type: str) -> dict:
+def _extract(text: str, doc_type: str, detailed: List[Any] = None) -> dict:
     if doc_type == "pan":
-        return extract_pan(text)
+        return extract_pan(text, detailed)
     if doc_type in ("aadhaar_front", "aadhaar_back"):
-        return extract_aadhaar(text, doc_type)
+        return extract_aadhaar(text, doc_type, detailed)
     if doc_type == "voter_id":
         from extractors.voter_id import extract_voter_id
-        return extract_voter_id(text)
+        return extract_voter_id(text, detailed)
     if doc_type == "dl":
         from extractors.dl import extract_dl
-        return extract_dl(text)
+        return extract_dl(text, detailed)
     if doc_type == "passport":
         from extractors.passport import extract_passport
-        return extract_passport(text)
+        return extract_passport(text, detailed)
     return {"raw": text}
 
 

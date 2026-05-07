@@ -38,10 +38,11 @@ def _name_spatial_front(detailed: List[Any]) -> Optional[str]:
     Finds the name on Aadhaar front. Usually the first bold-ish 
     text block below the Government header.
     """
-    # Find DOB box to use as anchor (name is usually above it)
+    # Find DOB box or date pattern to use as anchor
     dob_box = None
     for box, text, conf in detailed:
-        if any(kw in text.upper() for kw in ["DOB", "DATE OF BIRTH", "YEAR OF BIRTH", "YOB"]):
+        upper = text.upper()
+        if any(kw in upper for kw in ["DOB", "DATE OF BIRTH", "YEAR OF BIRTH", "YOB", "जन्म", "तिथि"]) or re.search(r'\d{2}/\d{2}/\d{4}', text):
             dob_box = box
             break
             
@@ -89,7 +90,7 @@ def _address_spatial(detailed: List[Any]) -> Optional[str]:
     start_y = None
     for box, text, conf in detailed:
         upper = text.upper()
-        if any(kw in upper for kw in ["ADDRESS", "S/O", "D/O", "W/O", "C/O"]):
+        if any(kw in upper for kw in ["ADDRESS", "S/O", "D/O", "W/O", "C/O", "पता", "आत्मज", "निवासी"]):
             start_y = box[0][1]
             break
             
@@ -111,24 +112,60 @@ def _address_spatial(detailed: List[Any]) -> Optional[str]:
 
 
 # ── shared field extractors ──────────────────────────────────────────────────
+def _normalize(text: str) -> str:
+    hindi_to_eng = str.maketrans('०१२३४५६७८९', '0123456789')
+    return text.translate(hindi_to_eng)
 
 def _aadhaar_number(text: str) -> Optional[str]:
-    # 12-digit number, often formatted as XXXX XXXX XXXX
+    text = _normalize(text)
+    
+    def validate_verhoeff(number: str) -> bool:
+        # Verhoeff algorithm for Aadhaar validation
+        multiplication_table = [
+            [0, 1, 2, 3, 4, 5, 6, 7, 8, 9], [1, 2, 3, 4, 0, 6, 7, 8, 9, 5], [2, 3, 4, 0, 1, 7, 8, 9, 5, 6],
+            [3, 4, 0, 1, 2, 8, 9, 5, 6, 7], [4, 0, 1, 2, 3, 9, 5, 6, 7, 8], [5, 9, 8, 7, 6, 0, 4, 3, 2, 1],
+            [6, 5, 9, 8, 7, 1, 0, 4, 3, 2], [7, 6, 5, 9, 8, 2, 1, 0, 4, 3], [8, 7, 6, 5, 9, 3, 2, 1, 0, 4],
+            [9, 8, 7, 6, 5, 4, 3, 2, 1, 0]
+        ]
+        permutation_table = [
+            [0, 1, 2, 3, 4, 5, 6, 7, 8, 9], [1, 5, 7, 6, 2, 8, 3, 0, 9, 4], [5, 8, 0, 3, 7, 9, 6, 1, 4, 2],
+            [8, 9, 1, 6, 0, 4, 3, 5, 2, 7], [9, 4, 5, 3, 1, 2, 6, 8, 7, 0], [4, 2, 8, 6, 5, 7, 3, 9, 0, 1],
+            [2, 7, 9, 3, 8, 0, 6, 4, 1, 5], [7, 0, 4, 6, 9, 1, 3, 2, 5, 8]
+        ]
+        inverse_table = [0, 4, 3, 2, 1, 5, 6, 7, 8, 9]
+        
+        c = 0
+        for i, digit in enumerate(reversed(number)):
+            c = multiplication_table[c][permutation_table[i % 8][int(digit)]]
+        return c == 0
+
+    # First, look for 12-digit patterns with spaces
+    spaced_match = re.search(r'\b(\d{4}\s\d{4}\s\d{4})\b', text)
+    if spaced_match:
+        num = spaced_match.group(1).replace(" ", "")
+        if validate_verhoeff(num): return num
+        
+    # Fallback to all 12-digit sequences
     clean_text = re.sub(r'[^0-9]', '', text)
     matches = re.findall(r'\d{12}', clean_text)
-    if matches:
-        return matches[-1] # Usually at the bottom
-    return None
+    for m in reversed(matches):
+        if validate_verhoeff(m): return m
+    
+    return matches[-1] if matches else None
 
 
 def _dob(text: str) -> Optional[str]:
-    m = re.search(r'(\d{2}/\d{2}/\d{4})', text)
+    text = _normalize(text)
+    # Be lenient with spaces in dates (e.g. 13/02 / 2003)
+    text_clean = re.sub(r'\s+', '', text)
+    m = re.search(r'(\d{2}/\d{2}/\d{4})', text_clean)
     if not m:
-        m = re.search(r'(\d{2}-\d{2}-\d{4})', text)
+        m = re.search(r'(\d{2}-\d{2}-\d{4})', text_clean)
     return m.group(1) if m else None
 
 
 def _year_of_birth(text: str) -> Optional[str]:
+    text = _normalize(text)
     m = re.search(r'(?:YOB|Year of Birth|Birth)\s*[:\-]?\s*(\d{4})', text, re.IGNORECASE)
     if not m:
         m = re.search(r'\b(19\d{2}|20[012]\d)\b', text)
@@ -137,18 +174,18 @@ def _year_of_birth(text: str) -> Optional[str]:
 
 def _gender(text: str) -> Optional[str]:
     upper = text.upper()
-    if "FEMALE" in upper: return "Female"
-    if "MALE" in upper: return "Male"
+    if any(k in upper for k in ["FEMALE", "महिला"]): return "Female"
+    if any(k in upper for k in ["MALE", "पुरुष"]): return "Male"
     return None
 
 
 def _is_likely_name(text: str) -> bool:
-    _SKIP = {"GOVERNMENT", "INDIA", "UIDAI", "UNIQUE", "AUTHORITY", "MALE", "FEMALE", "DOB", "DATE", "BIRTH"}
-    clean = re.sub(r'[^A-Za-z\s]', '', text).strip()
+    _SKIP = {"GOVERNMENT", "INDIA", "UIDAI", "UNIQUE", "AUTHORITY", "MALE", "FEMALE", "DOB", "DATE", "BIRTH", "सरकार", "भारत", "पहचान", "प्राधिकरण", "नाम"}
+    clean = re.sub(r'[^A-Za-z\s\u0900-\u097F]', '', text).strip()
     words = clean.split()
-    if not (2 <= len(words) <= 5): return False
+    if not (1 <= len(words) <= 5): return False
     if any(w.upper() in _SKIP for w in words): return False
-    return True
+    return len(clean) > 2
 
 
 def _name_front(lines: List[str]) -> Optional[str]:

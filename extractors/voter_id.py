@@ -18,6 +18,8 @@ def extract_voter_id(text: str, detailed: List[Any] = None) -> dict:
         "name": name,
         "father_name": father,
         "dob": _dob(text),
+        "gender": _gender(text),
+        "address": _address_spatial(detailed) if detailed else None
     }
 
 def _voter_id_number(text: str) -> Optional[str]:
@@ -59,10 +61,25 @@ def _name(lines: List[str]) -> Optional[str]:
                 return parts[-1].strip().title()
     return None
 
-def _father_name(lines: List[str]) -> Optional[str]:
-    for i, line in enumerate(lines):
-        if re.search(r'FATHER|HUSBAND', line, re.I):
-            parts = re.split(r'[:\-]', line)
-            if len(parts) > 1 and len(parts[-1].strip()) > 3:
-                return parts[-1].strip().title()
+def _gender(text: str) -> Optional[str]:
+    upper = text.upper()
+    if any(k in upper for k in ["FEMALE", "महिला"]): return "Female"
+    if any(k in upper for k in ["MALE", "पुरुष"]): return "Male"
+    return None
+
+def _address_spatial(detailed: List[Any]) -> Optional[str]:
+    start_y = None
+    for box, text, conf in detailed:
+        upper = text.upper()
+        if any(kw in upper for kw in ["ADDRESS", "पता", "निवासी"]):
+            start_y = box[0][1]
+            break
+    if start_y:
+        addr_lines = []
+        for box, text, conf in detailed:
+            if box[0][1] > start_y and conf > 0.3:
+                # Filter out numbers that look like Voter ID number
+                if re.match(r'^[A-Z]{3}[0-9]{7}$', text.strip()): continue
+                addr_lines.append(text.strip())
+        return ", ".join(addr_lines[:6])
     return None

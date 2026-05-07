@@ -432,9 +432,9 @@
             submitBtn.disabled = true;
             resultDiv.style.display = 'none';
 
-            // AbortController for timeout (60 seconds)
+            // AbortController for timeout (120 seconds for CPU-based Neural OCR)
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 60000);
+            const timeoutId = setTimeout(() => controller.abort(), 120000);
 
             try {
                 // Determine API endpoint: use current path if at root, otherwise relative

@@ -11,9 +11,9 @@ def extract_pan(text: str, detailed: List[Any] = None) -> dict:
     name = None
     father = None
     if detailed:
-        # Try multiple label variants to handle OCR noise in labels
-        name = _name_spatial(detailed, ["NAME", "NANE", "NAIE", "NAMF"])
-        father = _name_spatial(detailed, ["FATHER", "FATHE", "FATHFR", "ATHER"])
+        # Try multiple label variants including noisy Hindi and corrupted English
+        name = _name_spatial(detailed, ["NAME", "NANE", "NAIE", "NAMF", "नाम", "-म", "नlम", "MAME"])
+        father = _name_spatial(detailed, ["FATHER", "FATHE", "FATHFR", "ATHER", "पिता", "FATER", "FATIER"])
 
     # Fallback to regex if spatial failed
     if not name:   name = _name(raw_lines)
@@ -30,79 +30,76 @@ def extract_pan(text: str, detailed: List[Any] = None) -> dict:
 
 # ── field extractors ─────────────────────────────────────────────────────────
 
-def _name_spatial(detailed: List[Any], label_keywords: List[str]) -> Optional[str]:
-    """
-    Finds the text block directly below a label like 'Name' or 'Father's Name'.
-    """
+def _name_spatial(detailed: List[Any], keywords: List[str]) -> Optional[str]:
     label_box = None
-    for res in detailed:
-        box, text, conf = res
-        upper_text = text.upper()
-        if any(kw in upper_text for kw in label_keywords) and conf > 0.3:
-            # For Father's Name, ensure it's not the 'Name' label
-            if "FATHER" in label_keywords[0] and "FATHER" not in upper_text:
-                continue
+    for box, text, conf in detailed:
+        upper = text.upper()
+        if any(kw in upper for kw in keywords) and conf > 0.2:
             label_box = box
             break
             
-    if not label_box:
-        return None
+    if label_box:
+        label_bottom = label_box[2][1]
+        label_left = label_box[0][0]
+        # Look for the first name-like block BELOW the label
+        # (Indian IDs often have labels above the name or to the left)
+        candidates = []
+        for box, text, conf in detailed:
+            box_top = box[0][1]
+            box_left = box[0][0]
+            if box_top >= label_bottom - 10 and box_top < label_bottom + 150:
+                if abs(box_left - label_left) < 500: # Stay in the same horizontal area
+                    if _is_likely_name(text):
+                        candidates.append((box_top, text))
         
-    # label_box is [[x0,y0], [x1,y1], [x2,y2], [x3,y3]]
-    label_bottom = label_box[2][1]
-    label_left = label_box[0][0]
-    
-    candidates = []
-    for res in detailed:
-        box, text, conf = res
-        box_top = box[0][1]
-        box_left = box[0][0]
-        
-        # If it's below the label and roughly aligned
-        # PAN card fields are usually within 200 pixels below the label at 3000px width
-        if label_bottom < box_top < label_bottom + 300: 
-            if abs(box_left - label_left) < 800: # allow some horizontal offset
+        if candidates:
+            candidates.sort(key=lambda x: x[0])
+            return _clean_name(candidates[0][1])
+            
+        # Fallback: Look to the RIGHT of the label
+        label_right = label_box[1][0]
+        label_top = label_box[0][1]
+        for box, text, conf in detailed:
+            if box[0][0] >= label_right - 10 and box[0][1] > label_top - 30 and box[0][1] < label_top + 30:
                 if _is_likely_name(text):
-                    candidates.append((conf, text))
-                    
-    if candidates:
-        # Sort by confidence and pick the most 'name-like' one
-        candidates.sort(key=lambda x: x[0], reverse=True)
-        return _clean_name(candidates[0][1])
+                    return _clean_name(text)
+    return None
         
     return None
 
 
 def _pan_number(text: str) -> Optional[str]:
-    clean_text = re.sub(r'[^A-Z0-9]', ' ', text.upper())
-    words = clean_text.split()
+    full_clean = re.sub(r'[^A-Z0-9]', '', text.upper())
     
     def _fix_pan(cand: str) -> str:
-        letters = cand[:5].replace('0', 'O').replace('1', 'I').replace('8', 'B').replace('5', 'S')
-        numbers = cand[5:9].replace('O', '0').replace('I', '1').replace('S', '5').replace('Z', '2').replace('B', '8')
+        # Common misreads for letters/numbers in PAN positions
+        letters = cand[:5].replace('0', 'O').replace('1', 'I').replace('8', 'B').replace('5', 'S').replace('6', 'G')
+        numbers = cand[5:9].replace('O', '0').replace('I', '1').replace('S', '5').replace('Z', '2').replace('B', '8').replace('G', '6')
         last_letter = cand[9].replace('0', 'O').replace('1', 'I').replace('5', 'S')
         return letters + numbers + last_letter
 
     potential = []
-    for word in words:
-        if len(word) == 10:
-            fixed = _fix_pan(word)
-            if re.match(r'^[A-Z]{5}[0-9]{4}[A-Z]$', fixed):
-                if fixed[3] in "PCHFTJ":
-                    potential.append(fixed)
-        elif len(word) > 10:
-            for i in range(len(word) - 9):
-                cand = word[i:i+10]
-                fixed = _fix_pan(cand)
-                if re.match(r'^[A-Z]{5}[0-9]{4}[A-Z]$', fixed):
-                    if fixed[3] in "PCHFTJ":
-                        potential.append(fixed)
+    for i in range(len(full_clean) - 9):
+        cand = full_clean[i:i+10]
+        fixed = _fix_pan(cand)
+        # Hyper-aggressive 4th character correction
+        if fixed[3] in ['I', '1', 'R', 'F', 'Y', 'V', 'L', '7']: 
+            fixed = fixed[:3] + 'P' + fixed[4:]
+            
+        if re.match(r'^[A-Z]{5}[0-9]{4}[A-Z]$', fixed):
+            if fixed[3] in "PCHFTJLG":
+                potential.append(fixed)
 
     if potential:
+        # Priority: Individual (P) starting with common PAN initials (A-Z)
         for p in potential:
-            if p[3] == 'P': return p
+            if p[3] == 'P' and p[0] in "ABCDEFG": return p # A-G are common initials
         return potential[0]
             
+    # Final regex fallback on the raw text
+    raw_match = re.search(r'([A-Z]{3}[A-Z]{2}[0-9]{4}[A-Z])', text.upper().replace(' ', ''))
+    if raw_match: return _fix_pan(raw_match.group(1))
+
     return None
 
 
@@ -141,7 +138,15 @@ def _dob(text: str) -> Optional[str]:
 def _name(raw_lines: List[str]) -> Optional[str]:
     _SKIP = {"INDIA", "INCOME", "TAX", "DEPARTMENT", "GOVT", "DEPT", "GOVERNMENT", "PANCARD", "ACCOUNT", "SIGNATURE", "DIGITALLY", "SIGNED"}
     for line in raw_lines:
-        if any(s in line.upper() for s in _SKIP): continue
+        if any(s in line.upper() for s in _SKIP): 
+            # If the line contains a skip word but also a colon, the name might be after it
+            if ':' in line or '-' in line:
+                parts = re.split(r'[:\-]', line)
+                candidate = parts[-1].strip()
+                if _is_likely_name(candidate):
+                    return _clean_name(candidate)
+            continue
+            
         if _is_likely_name(line):
             return _clean_name(line)
     return None
@@ -160,37 +165,40 @@ def _father_name(raw_lines: List[str]) -> Optional[str]:
 
 def _is_likely_name(text: str) -> bool:
     # Production-ready name validator
-    # 1. Reject if too many symbols
-    if len(re.findall(r'[^A-Z\s\.]', text.upper())) > 3:
+    # Support Devanagari (Hindi) script \u0900-\u097F
+    
+    # 1. Reject if too many symbols (excluding Hindi and dots)
+    if len(re.findall(r'[^A-Z\s\.\u0900-\u097F]', text.upper())) > 5: # More lenient
         return False
         
     # 2. Reject if all numbers
     if text.isdigit():
         return False
         
-    # 3. Reject if lowercase (Indian IDs names are always UPPER)
-    if any(c.islower() for c in text) and len(text) > 5:
-        return False
-        
-    clean = re.sub(r'[^A-Z\s]', ' ', text.upper()).strip()
+    # Clean and filter
+    clean = re.sub(r'[^A-Z\s\u0900-\u097F]', ' ', text.upper()).strip()
     words = [w for w in clean.split() if len(w) >= 2]
     
-    _NOISE = {"FET", "AE", "OF", "THE", "INCOME", "TAX", "INDIA", "GOVT", "DEPT", "GOVERNMENT", "PANCARD", "ACCOUNT", "SIGNATURE", "DIGITALLY", "SIGNED", "DEPARTMENT", "NUMBER", "CARD", "PERMANENT"}
+    _NOISE = {"FET", "AE", "OF", "THE", "INCOME", "TAX", "INDIA", "GOVT", "DEPT", "GOVERNMENT", "PANCARD", "ACCOUNT", "SIGNATURE", "DIGITALLY", "SIGNED", "DEPARTMENT", "NUMBER", "CARD", "PERMANENT", "नाम", "पिता", "DATE", "BIRTH", "DEPARTMENT", "NUMBER"}
     filtered = [w for w in words if w.upper() not in _NOISE]
     
-    # Names usually have 2-4 words
-    return 2 <= len(filtered) <= 5 and len(" ".join(filtered)) > 4
+    # Names usually have 1-5 words (allowing 1 word for misreads that joined words)
+    return 1 <= len(filtered) <= 6 and len(" ".join(filtered)) > 3
 
 def _clean_name(text: str) -> str:
     res = text.upper()
-    # Corrections
-    res = res.replace("VIYAY", "VIJAY")
-    res = res.replace("VERCIA", "VERGIA")
-    res = res.replace("VERGCIA", "VERGIA")
-    res = res.replace("VIJAYVERGIA", "VIJAY VERGIA")
-    
-    # Remove trailing digital signatures
-    _NOISE_TRAIL = ["MIMA", "OARS", "OARE", "GE", "WA", "SEE", "EE", "OE", "SIGN", "DIGITALLY", "VALID", "UNLESS", "PHYSICALLY"]
+    # Handle common OCR misreads in Indian names
+    corrections = {
+        "VIYAY": "VIJAY", "SAIIJAY": "SANJAY", "SAJJAY": "SANJAY",
+        "VERCIA": "VERGIA", "VERGCIA": "VERGIA", "YIJAY": "VIJAY",
+        "TERGIA": "VERGIA", "TERCIA": "VERGIA", "IAME": "NAME",
+        "FATER": "FATHER", "FATIER": "FATHER"
+    }
+    for old, new in corrections.items():
+        res = res.replace(old, new)
+        
+    # Remove trailing digital signatures or noise
+    _NOISE_TRAIL = ["MIMA", "OARS", "OARE", "GE", "WA", "SEE", "EE", "OE", "SIGN", "DIGITALLY", "VALID", "UNLESS", "PHYSICALLY", "FATER", "MAME"]
     for noise in _NOISE_TRAIL:
         if f" {noise}" in res:
             res = res.split(f" {noise}")[0]

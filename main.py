@@ -192,4 +192,5 @@ def _validate_file(file: UploadFile, document_type: Optional[str]):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host=config.HOST, port=config.PORT)
+    # Enable reload=True to pick up code changes without manual restart
+    uvicorn.run("main:app", host=config.HOST, port=config.PORT, reload=True)

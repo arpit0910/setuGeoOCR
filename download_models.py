@@ -8,6 +8,7 @@ os.makedirs(model_dir, exist_ok=True)
 models = {
     "craft_mlt_25k.zip": "https://github.com/JaidedAI/EasyOCR/releases/download/v1.3/craft_mlt_25k.zip",
     "english_g2.zip": "https://github.com/JaidedAI/EasyOCR/releases/download/v1.3/english_g2.zip",
+    "devanagari_g2.zip": "https://github.com/JaidedAI/EasyOCR/releases/download/v1.3/devanagari_g2.zip",
 }
 
 headers = {'User-Agent': 'Mozilla/5.0'}
